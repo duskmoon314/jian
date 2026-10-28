@@ -1,0 +1,43 @@
+[package]
+name = "jian"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Campbell He (duskmoon314) <kp.campbell.he@duskmoon314.com>"]
+description = "A local-first Markdown WYSIWYG editor built with GPUI Kit"
+repository = "https://github.com/duskmoon314/jian"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+gpui-kit = "0.8"
+log = "0.4"
+markdown = "1"
+percent-encoding = "2"
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+toml = "1"
+url = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+lb-wry = "0.53"
+objc2-foundation = { version = "0.3", features = [
+    "NSData",
+    "NSError",
+    "NSString",
+    "NSGeometry",
+    "NSURL",
+    "NSKeyValueCoding",
+    "NSRunLoop",
+] }
+objc2-app-kit = { version = "0.3", features = [
+    "NSPrintInfo",
+    "NSPrintOperation",
+    "NSView",
+] }
+objc2-web-kit = { version = "0.3", features = [
+    "WKWebView",
+    "WKPDFConfiguration",
+] }
