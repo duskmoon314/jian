@@ -23,6 +23,7 @@ use jian::{
         pdf::{PdfExportSession, start as start_pdf_export},
         render_html_with_paper,
     },
+    print::{PrintSession, open_print_dialog},
     workspace::Workspace,
 };
 
@@ -59,6 +60,7 @@ struct Jian {
     file_filter: Entity<InputState>,
     _filter_subscription: Subscription,
     export_webview: Option<lb_wry::WebView>,
+    print_session: Option<PrintSession>,
     export_generation: u64,
     show_export_panel: bool,
     export_css: Option<ExportCss>,
@@ -88,6 +90,7 @@ impl Jian {
             file_filter,
             _filter_subscription: filter_subscription,
             export_webview: None,
+            print_session: None,
             export_generation: 0,
             show_export_panel: false,
             export_css: None,
@@ -260,11 +263,6 @@ impl Jian {
         }
     }
 
-    fn toggle_export_panel(&mut self, cx: &mut Context<Self>) {
-        self.show_export_panel = !self.show_export_panel;
-        cx.notify();
-    }
-
     fn export_input(&self, cx: &App) -> Result<(String, String, PathBuf)> {
         let Screen::Document(document) = &self.screen else {
             anyhow::bail!("no open document");
@@ -285,14 +283,58 @@ impl Jian {
             .as_ref()
             .map(|css| css.source.as_str())
             .unwrap_or(DEFAULT_CSS);
+        self.render_document_html(document, &title, &base_directory, css, cx)
+    }
+
+    fn print_input(&self, cx: &App) -> Result<String> {
+        let Screen::Document(document) = &self.screen else {
+            anyhow::bail!("no open document");
+        };
+        let root = self
+            .workspace
+            .as_ref()
+            .map(Workspace::root)
+            .or_else(|| document.path.parent())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let css_path = root.join(".jian/print.css");
+        let css = match fs::read_to_string(&css_path) {
+            Ok(css) => css,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => DEFAULT_CSS.to_owned(),
+            Err(error) => {
+                return Err(error).context(format!("failed to read {}", css_path.display()));
+            }
+        };
+        let title = document
+            .path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Document")
+            .to_owned();
+        let base_directory = document
+            .path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .to_path_buf();
+        self.render_document_html(document, &title, &base_directory, &css, cx)
+            .map(|(_, html, _)| html)
+    }
+
+    fn render_document_html(
+        &self,
+        document: &DocumentView,
+        title: &str,
+        base_directory: &std::path::Path,
+        css: &str,
+        cx: &App,
+    ) -> Result<(String, String, PathBuf)> {
         let html = render_html_with_paper(
             document.editor.read(cx).source(),
-            &title,
-            &base_directory,
+            title,
+            base_directory,
             css,
             self.paper_size,
         )?;
-        Ok((title, html, base_directory))
+        Ok((title.to_owned(), html, base_directory.to_path_buf()))
     }
 
     fn prompt_css(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -356,6 +398,28 @@ impl Jian {
             }
         })
         .detach();
+    }
+
+    fn print_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.save_now(cx) {
+            return;
+        }
+        let html = match self.print_input(cx) {
+            Ok(input) => input,
+            Err(error) => {
+                self.status = format!("Print preparation failed: {error:#}");
+                cx.notify();
+                return;
+            }
+        };
+        self.status = match open_print_dialog(&html, window) {
+            Ok(session) => {
+                self.print_session = Some(session);
+                "Preparing print dialog…".into()
+            }
+            Err(error) => format!("Print preparation failed: {error:#}"),
+        };
+        cx.notify();
     }
 
     fn prompt_export_pdf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -618,8 +682,8 @@ impl Jian {
                     .p_2()
                     .border_b_1()
                     .border_color(cx.theme().border)
-                    .child(
-                        h_flex().flex_1().child(
+                    .child(h_flex().flex_1().when(self.workspace.is_some(), |this| {
+                        this.child(
                             Button::new("toggle-files")
                                 .label(if self.show_workspace_sidebar {
                                     "Hide Files"
@@ -630,8 +694,8 @@ impl Jian {
                                     this.show_workspace_sidebar = !this.show_workspace_sidebar;
                                     cx.notify();
                                 })),
-                        ),
-                    )
+                        )
+                    }))
                     .child(
                         Button::new("source-mode")
                             .label(if source_mode { "Rendered" } else { "Source" })
@@ -645,11 +709,9 @@ impl Jian {
                             .label("Backlinks")
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_backlinks(cx))),
                     )
-                    .child(
-                        Button::new("export")
-                            .label("Export")
-                            .on_click(cx.listener(|this, _, _, cx| this.toggle_export_panel(cx))),
-                    ),
+                    .child(Button::new("print").label("Print").on_click(
+                        cx.listener(|this, _, window, cx| this.print_document(window, cx)),
+                    )),
             )
             .child(
                 v_flex().flex_1().min_h_0().overflow_hidden().child(

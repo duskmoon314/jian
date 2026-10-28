@@ -21,8 +21,7 @@ cargo run -- path/to/note.md
 - Block-level and full-document Markdown editing with autosave.
 - Nearest-ancestor `.jian` workspace discovery and a collapsible file sidebar.
 - Filename filtering and on-demand backlinks for standard Markdown links.
-- HTML and WKWebView PDF export with custom CSS.
-- A4 or Letter paginated output, plus continuous single-page output.
+- Native print dialog with Save as PDF support and optional print CSS.
 - Native titlebar filename and dirty marker, close/quit saving, and external
   modification detection.
 
@@ -34,6 +33,9 @@ Attachments default to `assets/`. Override the directory in the optional
 ```toml
 assets_dir = "Attachments"
 ```
+
+Print uses `.jian/print.css` when present and falls back to the built-in
+stylesheet otherwise.
 
 ## License
 
